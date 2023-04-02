@@ -1,0 +1,9 @@
+struct Mando
+{
+    float j_izq_ver;
+    float j_der_ver;
+    float j_izq_hor;
+    float j_der_hor;
+    float p_izq;
+    float p_der;
+};

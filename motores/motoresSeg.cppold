@@ -1,0 +1,108 @@
+
+#include <unistd.h>
+#include "Navio2/PWM.h"
+//#include "Navio+/RCOutput_Navio.h"
+#include "Navio2/RCOutput_Navio2.h" 
+#include "Common/Util.h"
+#include <unistd.h>
+#include <memory> 
+#include <time.h>  
+
+#define SERVO_MIN 1000 /*mS*/
+#define SERVO_MAX 1400 /*mS*/
+#define SERVO_MED 1200
+
+#define PWM_OUTPUT_0 0
+#define PWM_OUTPUT_1 1
+#define PWM_OUTPUT_2 2
+#define PWM_OUTPUT_3 3
+
+
+//using namespace Navio;
+
+std::unique_ptr <RCOutput> get_rcout()
+{
+        auto ptr = std::unique_ptr <RCOutput>{ new RCOutput_Navio2() };
+        return ptr;
+
+
+}
+
+int main(int argc, char *argv[])
+{
+
+        auto pwm = get_rcout();
+
+        if (check_apm()) {
+            return 1;
+        }
+
+        if (getuid()) {
+            fprintf(stderr, "Not root. Please launch like this: sudo %s\n", argv[0]);
+        }
+
+        if( !(pwm->initialize(PWM_OUTPUT_0))||!(pwm->initialize(PWM_OUTPUT_1))|| !(pwm->initialize(PWM_OUTPUT_2))|| !(pwm->initialize(PWM_OUTPUT_3))) {
+            return 1;
+        }
+
+	pwm->set_frequency(PWM_OUTPUT_0, 50);
+	pwm->set_frequency(PWM_OUTPUT_1, 50);
+	pwm->set_frequency(PWM_OUTPUT_2, 50);
+	pwm->set_frequency(PWM_OUTPUT_3, 50);
+
+	if ( !(pwm->enable(PWM_OUTPUT_0))||!(pwm->enable(PWM_OUTPUT_1))||!(pwm->enable(PWM_OUTPUT_2))||!(pwm->enable(PWM_OUTPUT_3)) ) {
+
+	    return 1;
+	}
+
+    int i=0;
+	fprintf(stderr, "Iniciando armado dos motores\n");
+    for (i=0; i<201;i++){
+	pwm->set_duty_cycle(PWM_OUTPUT_0,SERVO_MIN);
+	pwm->set_duty_cycle(PWM_OUTPUT_1,SERVO_MIN);
+	pwm->set_duty_cycle(PWM_OUTPUT_2,SERVO_MIN);
+	pwm->set_duty_cycle(PWM_OUTPUT_3,SERVO_MIN);
+	usleep(15000);
+	fprintf(stderr, "1");
+
+    }
+	//sleep(4);
+	i=0;
+    for (i=0; i<101;i++){
+    pwm->set_duty_cycle(PWM_OUTPUT_0,1050);
+    pwm->set_duty_cycle(PWM_OUTPUT_1,1050);
+    pwm->set_duty_cycle(PWM_OUTPUT_2,1050);
+    pwm->set_duty_cycle(PWM_OUTPUT_3,1050);
+    usleep(15000);
+    fprintf(stderr, "2");
+    //sleep(2);
+    }
+    i=0;    
+    for (i=0; i<101;i++){
+    pwm->set_duty_cycle(PWM_OUTPUT_0,SERVO_MIN);
+    pwm->set_duty_cycle(PWM_OUTPUT_1,SERVO_MIN);
+    pwm->set_duty_cycle(PWM_OUTPUT_2,SERVO_MIN);
+    pwm->set_duty_cycle(PWM_OUTPUT_3,SERVO_MIN);
+	usleep(15000);
+	fprintf(stderr, "3");
+
+    }
+
+    fprintf(stderr, "Armado listo\n");
+
+        while (true) {
+            pwm->set_duty_cycle(PWM_OUTPUT_0, 1200);
+            pwm->set_duty_cycle(PWM_OUTPUT_1, 1200);
+            pwm->set_duty_cycle(PWM_OUTPUT_2, 1200);
+            pwm->set_duty_cycle(PWM_OUTPUT_3, 1200);
+            usleep(15000);
+/*            pwm->set_duty_cycle(PWM_OUTPUT_0, SERVO_MED);
+            pwm->set_duty_cycle(PWM_OUTPUT_1, SERVO_MED);
+            pwm->set_duty_cycle(PWM_OUTPUT_2, SERVO_MED);
+            pwm->set_duty_cycle(PWM_OUTPUT_3, SERVO_MED);
+           usleep(100); */
+        }
+
+
+    return 0;
+}

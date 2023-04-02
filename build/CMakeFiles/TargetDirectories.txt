@@ -1,0 +1,5 @@
+/home/pi/aplicacion/build/CMakeFiles/rebuild_cache.dir
+/home/pi/aplicacion/build/CMakeFiles/pid.dir
+/home/pi/aplicacion/build/CMakeFiles/edit_cache.dir
+/home/pi/aplicacion/build/CMakeFiles/common.dir
+/home/pi/aplicacion/build/CMakeFiles/navio2.dir

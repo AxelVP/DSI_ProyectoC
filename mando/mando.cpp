@@ -1,0 +1,508 @@
+// Copyright 2016 Proyectos y Sistemas de Mantenimiento SL (eProsima).
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @file MandoPublisher.cpp
+ *
+ */
+
+#include <unistd.h>
+#include <cstdio>
+#include <stdio.h>    
+#include <stdlib.h> 
+
+#include <Navio2/RCInput_Navio2.h>
+#include <Common/Util.h>
+#include <memory>
+
+#define READ_FAILED -1
+
+
+#include "../topics/mando/MandoPubSubTypes.h"
+#include "../topics/killswitch/KillswitchPubSubTypes.h"
+
+#include <chrono>
+#include <sstream>
+#include <fastdds/dds/domain/DomainParticipantFactory.hpp>
+#include <fastdds/dds/domain/DomainParticipant.hpp>
+#include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/dds/publisher/Publisher.hpp>
+#include <fastdds/dds/publisher/DataWriter.hpp>
+#include <fastdds/dds/publisher/DataWriterListener.hpp>
+
+using namespace eprosima::fastdds::dds;
+
+
+std::unique_ptr <RCInput> get_rcin()
+{
+    if (get_navio_version() == NAVIO2)
+    {
+        auto ptr = std::unique_ptr <RCInput>{ new RCInput_Navio2() };
+        return ptr;
+    }
+
+}
+
+
+
+
+class MandoPublisher
+{
+private:
+
+    Mando mando_;
+
+    DomainParticipant* participant_;
+
+    Publisher* publisher_;
+
+    Topic* topic_;
+
+    DataWriter* writer_;
+
+    TypeSupport type_;
+
+    class PubListener : public DataWriterListener
+    {
+    public:
+
+        PubListener()
+            : matched_(0)
+        {
+        }
+
+        ~PubListener() override
+        {
+        }
+
+        void on_publication_matched(
+                DataWriter*,
+                const PublicationMatchedStatus& info) override
+        {
+            if (info.current_count_change == 1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher matched." << std::endl;
+            }
+            else if (info.current_count_change == -1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher unmatched." << std::endl;
+            }
+            else
+            {
+                std::cout << info.current_count_change
+                        << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
+            }
+        }
+
+        std::atomic_int matched_;
+
+    } listener_;
+
+public:
+
+    MandoPublisher()
+        : participant_(nullptr)
+        , publisher_(nullptr)
+        , topic_(nullptr)
+        , writer_(nullptr)
+        , type_(new MandoPubSubType())
+    {
+    }
+
+    virtual ~MandoPublisher()
+    {
+        if (writer_ != nullptr)
+        {
+            publisher_->delete_datawriter(writer_);
+        }
+        if (publisher_ != nullptr)
+        {
+            participant_->delete_publisher(publisher_);
+        }
+        if (topic_ != nullptr)
+        {
+            participant_->delete_topic(topic_);
+        }
+        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+    }
+
+    //!Initialize the publisher
+    bool init()
+    {
+
+        mando_.j_izq_ver(0);
+        mando_.j_der_ver(0);
+        mando_.j_izq_hor(0);
+        mando_.j_der_hor(0);
+        mando_.p_izq(0);
+        mando_.p_der(0);
+
+        DomainParticipantQos participantQos;
+        participantQos.name("Participant_publisher");
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
+
+        if (participant_ == nullptr)
+        {
+            return false;
+        }
+
+        // Register the Type
+        type_.register_type(participant_);
+
+        // Create the publications Topic
+        topic_ = participant_->create_topic("MandoTopic", "Mando", TOPIC_QOS_DEFAULT);
+
+        if (topic_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the Publisher
+        publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
+
+        if (publisher_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the DataWriter
+        writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
+
+        if (writer_ == nullptr)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    //!Send a publication
+    bool publish()
+    {
+
+        //CODIGO VALORES
+        //CODIGO VALORES
+        //CODIGO VALORES
+        //CODIGO VALORES
+
+        auto rcin = get_rcin();
+        rcin->initialize();
+
+
+        int period0 = rcin->read(0);
+        if (period0 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        int period1 = rcin->read(1);
+        if (period1 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        int period2 = rcin->read(2);
+        if (period2 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        int  period3 = rcin->read(3);
+        if (period3 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        int period4 = rcin->read(4);
+        if (period4 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        int period5 = rcin->read(5);
+        if (period5 == READ_FAILED)
+            return EXIT_FAILURE;
+
+        //Todos los valores son entre -180 y 180, menos el del throttle que es entre 0 y 180
+        float p0 = (((period0-1104)/820.0)*360)-180 ;
+        float p1 = (((period1-1104)/820.0)*(-360))+180;
+        float p2 = (((period2-1104)/820.0)*180+1);
+        float p3 = (((period3-1104)/820.0)*360)-180;
+
+        ///////////////AJUSTES DEL MANDO PARA EL THROTTLE
+        if(p0 > -2 && p0 < 2) p0 = 0;
+        if(p1 > -2 && p1 < 2) p1 = 0;
+        if(p3 > -2 && p3 < 2) p3 = 0;
+
+
+        if(period4==964){
+            period4=1;
+        }else if(period4==2064){
+            period4=-1;
+        }else{
+            period4=0;
+        }
+
+        if(period5==964){
+            period5=1;
+        }else if(period5==2064){
+            period5=-1;
+        }else{
+            period5=0;
+        }
+
+        if(p0 > 180 || p0 < -180) p0 = 0;
+        if(p1 > 180 || p1 < -180) p1 = 0;
+        if(p2 > 181 || p2 < 1) p2 = 1;
+        if(p3 > 180 || p3 < -180) p3 = 0;
+
+        /*p2 = 100;
+        p0 = 0;
+        p1 = 0;
+        p3 = 0;*/
+
+        /*printf("J_izq_alt: %f \tJ_izq_hor: %f \t J_der_ver: %f \tJ_der_hor: %f\n", p2, p3, p1, p0);
+        printf("\t\t\tP_izq: %d \t\t P_der: %d\n\n", period4, period5);*/
+        
+        mando_.j_izq_ver(p2);
+        mando_.j_der_ver(p1);
+        mando_.j_izq_hor(p3);
+        mando_.j_der_hor(p0);
+        mando_.p_izq(period4);
+        mando_.p_der(period5);
+
+
+        //CODIGO VALORES
+        //CODIGO VALORES
+        //CODIGO VALORES
+        //CODIGO VALORES
+
+        writer_->write(&mando_);
+
+        if(period4==1){
+            return true;
+        }else{
+            return false;
+        }
+            
+
+    }
+
+    //!Run the Publisher
+    bool run()
+    {
+
+        bool kill = publish();
+
+        //IMPRIMIR TODOS LOS VALORES
+        //IMPRIMIR TODOS LOS VALORES
+        //IMPRIMIR TODOS LOS VALORES
+        //IMPRIMIR TODOS LOS VALORES
+        
+        std::cout   << "VALORES MANDO: " << "\n"
+                    << "j_izq_ver: " << mando_.j_izq_ver() << "\n"
+                    << "j_der_ver: " << mando_.j_der_ver() << "\n"
+                    << "j_izq_hor: " << mando_.j_izq_hor() << "\n"
+                    << "j_der_hor: " << mando_.j_der_hor() << "\n"
+                    << "p_izq: " << mando_.p_izq() << "\n"
+                    << "p_der: " << mando_.p_der() << "\n"
+                    << std::endl;
+            
+        return kill;
+    
+    }
+};
+
+
+
+
+
+class KillswitchPublisher
+{
+private:
+
+    Killswitch killswitch_;
+
+    DomainParticipant* participant_;
+
+    Publisher* publisher_;
+
+    Topic* topic_;
+
+    DataWriter* writer_;
+
+    TypeSupport type_;
+
+    class PubListener : public DataWriterListener
+    {
+    public:
+
+        PubListener()
+            : matched_(0)
+        {
+        }
+
+        ~PubListener() override
+        {
+        }
+
+        void on_publication_matched(
+                DataWriter*,
+                const PublicationMatchedStatus& info) override
+        {
+            if (info.current_count_change == 1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher matched." << std::endl;
+            }
+            else if (info.current_count_change == -1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher unmatched." << std::endl;
+            }
+            else
+            {
+                std::cout << info.current_count_change
+                        << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
+            }
+        }
+
+        std::atomic_int matched_;
+
+    } listener_;
+
+public:
+
+    KillswitchPublisher()
+        : participant_(nullptr)
+        , publisher_(nullptr)
+        , topic_(nullptr)
+        , writer_(nullptr)
+        , type_(new KillswitchPubSubType())
+    {
+    }
+
+    virtual ~KillswitchPublisher()
+    {
+        if (writer_ != nullptr)
+        {
+            publisher_->delete_datawriter(writer_);
+        }
+        if (publisher_ != nullptr)
+        {
+            participant_->delete_publisher(publisher_);
+        }
+        if (topic_ != nullptr)
+        {
+            participant_->delete_topic(topic_);
+        }
+        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+    }
+
+    //!Initialize the publisher
+    bool init()
+    {
+
+        killswitch_.kills(0);
+
+        DomainParticipantQos participantQos;
+        participantQos.name("Participant_publisher");
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
+
+        if (participant_ == nullptr)
+        {
+            return false;
+        }
+
+        // Register the Type
+        type_.register_type(participant_);
+
+        // Create the publications Topic
+        topic_ = participant_->create_topic("KillswitchTopic", "Killswitch", TOPIC_QOS_DEFAULT);
+
+        if (topic_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the Publisher
+        publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
+
+        if (publisher_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the DataWriter
+        writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
+
+        if (writer_ == nullptr)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    //!Send a publication
+    bool publish()
+    {
+
+        killswitch_.kills(1);
+
+        writer_->write(&killswitch_);
+        return true;
+
+    }
+
+    //!Run the Publisher
+    void run()
+    {
+        if (publish())
+        {
+            
+            std::cout   << "VALORES KILLSWITCH: " << "\n"
+                        << "killswitch: " << killswitch_.kills() << "\n"
+                        << std::endl;
+            
+        }
+    }
+};
+
+
+
+int main(
+        int argc,
+        char** argv)
+{
+    std::cout << "Starting publisher." << std::endl;
+
+    if (check_apm()) {
+        return 1;
+    }
+
+
+
+
+    MandoPublisher* mypubMando = new MandoPublisher();
+    KillswitchPublisher* mypubKillswitch = new KillswitchPublisher();
+    mypubMando->init();
+    mypubKillswitch->init();
+
+    while(1){
+
+        bool kill = mypubMando->run();
+        if(kill){
+            mypubKillswitch->run();
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    
+
+    delete mypubMando;
+    delete mypubKillswitch;
+    return 0;
+}

@@ -1,0 +1,279 @@
+// Copyright 2016 Proyectos y Sistemas de Mantenimiento SL (eProsima).
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * @file AhrsPublisher.cpp
+ *
+ */
+
+#include "../topics/ahrs/AhrsPubSubTypes.h"
+#include <chrono>
+#include <sstream>
+#include <fastdds/dds/domain/DomainParticipantFactory.hpp>
+#include <fastdds/dds/domain/DomainParticipant.hpp>
+#include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/dds/publisher/Publisher.hpp>
+#include <fastdds/dds/publisher/DataWriter.hpp>
+#include <fastdds/dds/publisher/DataWriterListener.hpp>
+
+
+#include "RTIMULib.h"
+
+#define RTMATH_PI                                       3.1415926535
+#define RTMATH_RAD_TO_DEGREE            (180.0 / RTMATH_PI)
+
+using namespace eprosima::fastdds::dds;
+
+int sampleCount = 0;
+int sampleRate = 0;
+uint32_t rateTimer;
+uint32_t displayTimer;
+uint32_t now;
+
+RTIMUSettings *settings;
+RTIMU *imu;
+
+class AhrsPublisher
+{
+private:
+
+    Ahrs ahrs_;
+
+    DomainParticipant* participant_;
+
+    Publisher* publisher_;
+
+    Topic* topic_;
+
+    DataWriter* writer_;
+
+    TypeSupport type_;
+
+    class PubListener : public DataWriterListener
+    {
+    public:
+
+        PubListener()
+            : matched_(0)
+        {
+        }
+
+        ~PubListener() override
+        {
+        }
+
+        void on_publication_matched(
+                DataWriter*,
+                const PublicationMatchedStatus& info) override
+        {
+            if (info.current_count_change == 1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher matched." << std::endl;
+            }
+            else if (info.current_count_change == -1)
+            {
+                matched_ = info.total_count;
+                std::cout << "Publisher unmatched." << std::endl;
+            }
+            else
+            {
+                std::cout << info.current_count_change
+                        << " is not a valid value for PublicationMatchedStatus current count change." << std::endl;
+            }
+        }
+
+        std::atomic_int matched_;
+
+    } listener_;
+
+public:
+
+    AhrsPublisher()
+        : participant_(nullptr)
+        , publisher_(nullptr)
+        , topic_(nullptr)
+        , writer_(nullptr)
+        , type_(new AhrsPubSubType())
+    {
+    }
+
+    virtual ~AhrsPublisher()
+    {
+        if (writer_ != nullptr)
+        {
+            publisher_->delete_datawriter(writer_);
+        }
+        if (publisher_ != nullptr)
+        {
+            participant_->delete_publisher(publisher_);
+        }
+        if (topic_ != nullptr)
+        {
+            participant_->delete_topic(topic_);
+        }
+        DomainParticipantFactory::get_instance()->delete_participant(participant_);
+    }
+
+    //!Initialize the publisher
+    bool init()
+    {
+
+        ahrs_.roll(0);
+        ahrs_.pitch(0);
+        ahrs_.yaw(0);
+
+        DomainParticipantQos participantQos;
+        participantQos.name("Participant_publisher");
+        participant_ = DomainParticipantFactory::get_instance()->create_participant(0, participantQos);
+
+        if (participant_ == nullptr)
+        {
+            return false;
+        }
+
+        // Register the Type
+        type_.register_type(participant_);
+
+        // Create the publications Topic
+        topic_ = participant_->create_topic("AhrsTopic", "Ahrs", TOPIC_QOS_DEFAULT);
+
+        if (topic_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the Publisher
+        publisher_ = participant_->create_publisher(PUBLISHER_QOS_DEFAULT, nullptr);
+
+        if (publisher_ == nullptr)
+        {
+            return false;
+        }
+
+        // Create the DataWriter
+        writer_ = publisher_->create_datawriter(topic_, DATAWRITER_QOS_DEFAULT, &listener_);
+
+        if (writer_ == nullptr)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    //!Send a publication
+    bool publish()
+    {
+
+        //CODIGO VALORES
+        //usleep(imu->IMUGetPollInterval() * 1000);
+
+        float roll, pitch, yaw;
+        while (imu->IMURead()) {
+            RTIMU_DATA imuData = imu->getIMUData();
+            sampleCount++;
+
+            now = RTMath::currentUSecsSinceEpoch();
+
+            if ((now - displayTimer) > 100000) {
+                std::cout << "Sample rate " << sampleRate << ": " << RTMath::displayDegrees("", imuData.fusionPose) << std::endl;
+                //printf("Sample rate %d: %s\r", sampleRate, RTMath::displayDegrees("", imuData.fusionPose));
+                //fflush(stdout);
+                displayTimer = now;
+
+                roll = imu->getIMUData().fusionPose.x() * RTMATH_RAD_TO_DEGREE;
+                pitch = imu->getIMUData().fusionPose.y() * RTMATH_RAD_TO_DEGREE;
+                yaw = imu->getIMUData().fusionPose.z() * RTMATH_RAD_TO_DEGREE;
+
+                yaw = yaw + 110;
+                if(yaw > 180) yaw = yaw - 180;
+                if(yaw < -180) yaw = yaw + 180;
+
+
+                /*if(roll > -1 && roll < 1) roll = 0;
+                if(pitch > -1 && pitch < 1) pitch = 0;
+                if(yaw > -1 && yaw < 1) yaw = 0;*/
+
+                ahrs_.roll(pitch);
+                ahrs_.pitch(roll*(-1));
+                ahrs_.yaw(yaw);
+
+                std::cout   << "VALORES AHRS: " << "\n"
+                            << "roll: " << ahrs_.roll() << "\n"
+                            << "pitch: " << ahrs_.pitch() << "\n"
+                            << "yaw: " << ahrs_.yaw() << "\n"
+                            << std::endl;
+
+                writer_->write(&ahrs_);
+            }
+
+            //  update rate every second
+            if ((now - rateTimer) > 100000) {
+                sampleRate = sampleCount;
+                sampleCount = 0;
+                rateTimer = now;
+            }
+   
+        }
+        return true;
+
+    }
+
+    //!Run the Publisher
+    void run()
+    {
+        while (true)
+        {
+            publish();
+            //std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+};
+
+int main(
+        int argc,
+        char** argv)
+{
+
+
+    //CODIGO DE LOS SENSORES
+    settings = new RTIMUSettings("RTIMULib");
+    imu = RTIMU::createIMU(settings);
+
+    if ((imu == NULL) || (imu->IMUType() == RTIMU_TYPE_NULL)) {
+        printf("No IMU found\n");
+        exit(1);
+    }
+    imu->IMUInit();
+
+    imu->setSlerpPower(0.02);
+    imu->setGyroEnable(true);
+    imu->setAccelEnable(true);
+    imu->setCompassEnable(true);
+
+    rateTimer = displayTimer = RTMath::currentUSecsSinceEpoch();
+    //CODIGO DE LOS SENSORES
+
+
+    std::cout << "Starting publisher." << std::endl;
+
+    AhrsPublisher* mypub = new AhrsPublisher();
+    if(mypub->init())
+    {
+        mypub->run();
+    }
+
+    delete mypub;
+    return 0;
+}
